@@ -3,6 +3,7 @@ import pandas as pd
 import speech_recognition as sr
 from pydub import AudioSegment
 import io
+import re
 
 # Configuración de la página
 st.set_page_config(page_title="Dictado de Números a Excel", page_icon="🎙️")
@@ -17,8 +18,8 @@ if "contador_hojas" not in st.session_state:
     st.session_state.contador_hojas = 1
 
 # --- SECCIÓN 1: SUBIDA Y PROCESAMIENTO DE AUDIO ---
-st.subheader("Sube tu archivo de audio (.wav o .mp3)")
-archivo_audio = st.file_uploader("Selecciona un archivo", type=["wav", "mp3"], label_visibility="collapsed")
+st.subheader("Sube tu archivo de audio (.wav, .mp3 o .m4a)")
+archivo_audio = st.file_uploader("Selecciona un archivo", type=["wav", "mp3", "m4a"], label_visibility="collapsed")
 
 col1, col2, col3 = st.columns(3)
 
@@ -35,17 +36,41 @@ if reiniciar:
     st.session_state.contador_hojas = 1
     st.rerun()
 
-# Lógica de simulación o procesamiento (puedes adaptarla según tu función de transcripción)
+# Lógica de procesamiento de audio REAL
 if archivo_audio and procesar:
-    nombre_hoja = f"Hoja {st.session_state.contador_hojas}"
-    # Ejemplo de datos simulados (reemplazar con tu lógica de SpeechRecognition)
-    nuevos_datos = ["123", "456", "789"] 
-    
-    if nombre_hoja not in st.session_state.hojas_datos:
-        st.session_state.hojas_datos[nombre_hoja] = []
-    
-    st.session_state.hojas_datos[nombre_hoja].extend(nuevos_datos)
-    st.success(f"Datos agregados a la {nombre_hoja}")
+    with st.spinner("Procesando y transformando audio a texto..."):
+        try:
+            # Leer el archivo subido en memoria
+            audio_bytes = archivo_audio.read()
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
+            
+            # Convertir obligatoriamente a WAV (formato que requiere SpeechRecognition)
+            wav_io = io.BytesIO()
+            audio_segment.export(wav_io, format="wav")
+            wav_io.seek(0)
+            
+            # Reconocimiento de voz
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(wav_io) as source:
+                audio_data = recognizer.record(source)
+                # Cambiado a español para que entienda bien los números dictados
+                texto_transcrito = recognizer.recognize_google(audio_data, language="es-ES")
+            
+            # Buscar todos los números en el texto transcrito
+            nuevos_datos = re.findall(r'\d+', texto_transcrito)
+            
+            if nuevos_datos:
+                nombre_hoja = f"Hoja {st.session_state.contador_hojas}"
+                if nombre_hoja not in st.session_state.hojas_datos:
+                    st.session_state.hojas_datos[nombre_hoja] = []
+                
+                st.session_state.hojas_datos[nombre_hoja].extend(nuevos_datos)
+                st.success(f"¡Éxito! Se encontraron {len(nuevos_datos)} números y se agregaron a la {nombre_hoja}")
+            else:
+                st.warning("El audio se procesó, pero no se lograron detectar números claros en la transcripción.")
+                
+        except Exception as e:
+            st.error(f"Hubo un problema al procesar el audio: {e}")
 
 if pausar:
     st.session_state.contador_hojas += 1
